@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>I thought of you</title>
+
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+<style>
+/* ===== Local fonts ===== */
+@font-face{
+  font-family:'PPNeueMachina';
+  src:url('PPNeueMachina-PlainRegular.otf') format('opentype');
+  font-weight:400; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:'Magonda';
+  src:url('Magonda.otf') format('opentype');
+  font-weight:400; font-style:normal; font-display:swap;
+}
+
+/* ===== Design tokens ===== */
+:root{
+  --page:#F2EFE9;          /* page background (user picks) */
+  --paper:#EEE7DC;         /* postcard paper */
+  --ink:#1B1917;           /* UI/body text */
+  --hand:#3C2F25;          /* handwriting (slightly lighter than before) */
+  --frame:#D7CDBF;         /* paper border */
+  --brand:#6C5D4E;         /* buttons, accents */
+  --brand-ink:#fff;
+  --muted:#C9C1B3;
+  --label:#1B1917CC;       /* control label color (auto updates) */
+  --title:#1B1917;         /* header color (auto updates) */
+  --accent:#8A6A4F;        /* city accent (auto updates for dark bg) */
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--page);color:var(--ink);
+  font-family:'PPNeueMachina',system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-serif}
+
+/* ===== Layout ===== */
+.app{max-width:1120px;margin:32px auto;padding:0 20px}
+.header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.brand{font-size:18px;letter-spacing:.02em;opacity:.95;color:var(--title)}
+.brand .city{color:var(--accent)}
+
+/* ===== Controls ===== */
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.label{font-size:13px;color:var(--label)}
+.select,.field,.range,.color,.search{
+  font-family:'PPNeueMachina',sans-serif; font-size:14px;
+  border:1px solid var(--muted); background:#fff; border-radius:12px; padding:10px 12px;
+}
+.color{padding:6px 8px;height:38px}
+.range{padding:6px 8px}
+.btn{
+  font-family:'PPNeueMachina',sans-serif; font-size:14px; letter-spacing:.02em;
+  background:var(--brand); color:var(--brand-ink); border:0; border-radius:12px;
+  padding:10px 14px; cursor:pointer; transition:.18s; box-shadow:0 6px 16px rgba(0,0,0,.08)
+}
+.btn:hover{transform:translateY(-1px)}
+.btn.ghost{background:transparent; color:var(--brand); border:1px solid var(--brand)}
+
+/* ===== Cards ===== */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.card{
+  position:relative; min-height:520px; background:var(--paper); border:1px solid var(--frame);
+  border-radius:20px; overflow:hidden; box-shadow:0 18px 30px rgba(0,0,0,.08), 0 2px 0 rgba(0,0,0,.04);
+}
+.pad{padding:20px}
+.hr{height:1px;background:rgba(0,0,0,.12);margin:10px 0}
+.hdr{font-size:13px; letter-spacing:.22em; text-transform:uppercase; text-align:center; opacity:.9; margin-top:6px}
+.caption{font-size:14px; text-align:center; opacity:.8}
+.noteArea{padding:8px 24px 16px}
+.script{
+  font-family:'Magonda',cursive; font-size:42px; line-height:1.34;
+  color:var(--hand);
+  border:0; outline:0; resize:vertical; background:transparent; min-height:200px; width:100%;
+}
+.script::placeholder{opacity:.4}
+
+/* Map area */
+.mapWrap{position:relative; height:100%;}
+#map{
+  position:absolute;
+  inset:72px 16px 20px 16px; border-radius:12px; border:1px solid var(--frame); overflow:hidden; z-index:1;
+  filter: grayscale(65%) sepia(22%) contrast(1.06) brightness(.97) saturate(.75);
+}
+.mapHdr{position:absolute; left:0; right:0; top:16px; text-align:center; font-size:13px; letter-spacing:.16em; opacity:.8; pointer-events:none}
+.photoMatte{position:absolute; inset:64px 18px 12px 18px; border-radius:10px; box-shadow:inset 0 0 0 8px rgba(250,246,240,.9); pointer-events:none; z-index:2}
+.mapboxgl-ctrl-top-right{top:auto;bottom:20px;right:16px}
+
+/* Search */
+.searchWrap{position:absolute; left:16px; right:16px; top:36px; z-index:3; display:flex; gap:8px}
+.search{flex:1}
+.suggestions{
+  position:absolute; top:70px; left:16px; right:16px; background:#fff; border:1px solid var(--muted); border-radius:10px;
+  z-index:4; display:none; max-height:220px; overflow:auto; box-shadow:0 10px 20px rgba(0,0,0,.08)
+}
+.suggestions button{
+  display:block; width:100%; text-align:left; border:0; background:#fff; padding:10px 12px; cursor:pointer; font:inherit;
+}
+.suggestions button:hover{background:#f5f3ef}
+
+/* Toast */
+#toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff;
+  padding:10px 14px; border-radius:10px; font-size:13px; z-index:9999; opacity:0; transition:opacity .2s}
+
+@media (max-width:1000px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div id="brand" class="brand">
+      I thought of you when I was in <span id="brandCity" class="city">this place</span>
+    </div>
+    <div class="controls">
+      <span class="label">Background</span>
+      <input id="bgColor" class="color" type="color" value="#F2EFE9"/>
+
+      <span class="label">Size</span>
+      <select id="sizeSel" class="select">
+        <option value="1600x2400">1600×2400</option>
+        <option value="1200x1800" selected>1200×1800</option>
+        <option value="1080x1620">1080×1620</option>
+        <option value="1000x1500">1000×1500</option>
+      </select>
+
+      <span class="label">Style</span>
+      <select id="styleSel" class="select">
+        <option value="mapbox/light-v11" selected>Vintage Light</option>
+        <option value="mapbox/dark-v11">Night Ink</option>
+        <option value="mapbox/streets-v12">Classic Streets</option>
+        <option value="mapbox/outdoors-v12">Terrain</option>
+        <option value="mapbox/satellite-streets-v12">Satellite</option>
+      </select>
+
+      <span class="label">Grain</span>
+      <input id="grain" class="range" type="range" min="0" max="100" value="16"/>
+
+      <button id="dlPng" class="btn">Download PNG</button>
+      <button id="dlJpg" class="btn ghost">Download JPG</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- FRONT -->
+    <section class="card" id="front">
+      <div class="pad">
+        <div class="hdr">CARTOLINA POSTALE</div>
+        <div class="caption" style="margin-top:6px"><em>I thought of this place and thought of you.</em></div>
+        <div class="hr"></div>
+        <div class="noteArea">
+          <!-- spellcheck & friends disabled -->
+          <textarea id="note" class="script" placeholder="Write your note here…"
+            spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off"></textarea>
+        </div>
+        <div class="hr" style="margin-top:0"></div>
+        <div class="caption" style="margin-bottom:8px">Thanks for sharing that moment with me.</div>
+      </div>
+    </section>
+
+    <!-- BACK -->
+    <section class="card" id="back">
+      <div class="mapWrap">
+        <div class="mapHdr">A NOTE FROM</div>
+
+        <div class="searchWrap">
+          <input id="search" class="search" placeholder="Search a place…"/>
+          <button id="go" class="btn" title="Search">Go</button>
+        </div>
+        <div id="suggestions" class="suggestions"></div>
+
+        <div id="map"></div>
+        <div class="photoMatte"></div>
+      </div>
+      <div class="pad" style="padding-top:10px">
+        <div style="text-align:center">
+          <span class="label">Optional label (script)</span>
+          <input id="placeLabel" class="field" value="" placeholder="(leave empty to omit)" style="margin-left:8px; min-width:220px"/>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= CONFIG ================= */
+const TOKEN = "pk.eyJ1IjoiYWxlamFuZHJvcXVpbnRvIiwiYSI6ImNseDZxbGFpcjE1ZHMyanNjZWg1eDIzejkifQ.VYiLvOBYgX5WwchhqO0I8w"; // <-- replace with your public pk token
+mapboxgl.accessToken = TOKEN;
+let currentCity = 'this place';
+
+/* ================= MAP ================= */
+const map = new mapboxgl.Map({
+  container:'map',
+  style:'mapbox://styles/mapbox/light-v11',
+  center:[7.025,43.552],
+  zoom:11,
+  attributionControl:false
+});
+map.addControl(new mapboxgl.NavigationControl({visualizePitch:false}), 'top-right');
+
+const marker = new mapboxgl.Marker({draggable:true})
+  .setLngLat([7.025,43.552]).addTo(map);
+
+map.on('click', (e)=> { marker.setLngLat(e.lngLat); updateTitleFromCoords(e.lngLat.lng, e.lngLat.lat); });
+marker.on('dragend', ()=> {
+  const {lng, lat} = marker.getLngLat();
+  updateTitleFromCoords(lng, lat);
+});
+document.getElementById('styleSel').addEventListener('change', e=>{
+  map.setStyle('mapbox://styles/'+e.target.value);
+  map.once('styledata', ()=> marker.addTo(map));
+});
+
+/* ================= SIMPLE GEOCODER ================= */
+const searchEl = document.getElementById('search');
+const suggestEl = document.getElementById('suggestions');
+const goBtn = document.getElementById('go');
+
+async function geocode(q){
+  if(!q.trim()) return [];
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${encodeURIComponent(TOKEN)}&autocomplete=true&limit=5`;
+  const res = await fetch(url);
+  if(!res.ok) return [];
+  const data = await res.json();
+  return (data.features||[]).map(f=>({name:f.place_name, center:f.center}));
+}
+async function showSuggestions(){
+  const items = await geocode(searchEl.value);
+  suggestEl.innerHTML = '';
+  if(!items.length){ suggestEl.style.display='none'; return; }
+  items.forEach(it=>{
+    const b = document.createElement('button');
+    b.textContent = it.name;
+    b.onclick = ()=>{
+      suggestEl.style.display='none'; searchEl.value = it.name;
+      map.flyTo({center: it.center, zoom: 12});
+      marker.setLngLat({lng: it.center[0], lat: it.center[1]});
+      updateTitleFromCoords(it.center[0], it.center[1]);
+    };
+    suggestEl.appendChild(b);
+  });
+  suggestEl.style.display='block';
+}
+searchEl.addEventListener('input', ()=> showSuggestions());
+searchEl.addEventListener('focus', ()=> showSuggestions());
+document.addEventListener('click', (e)=>{
+  if(!suggestEl.contains(e.target) && e.target!==searchEl) suggestEl.style.display='none';
+});
+goBtn.addEventListener('click', async ()=>{
+  const items = await geocode(searchEl.value);
+  if(items[0]){
+    map.flyTo({center: items[0].center, zoom: 12});
+    marker.setLngLat({lng: items[0].center[0], lat: items[0].center[1]});
+    updateTitleFromCoords(items[0].center[0], items[0].center[1]);
+  }
+});
+
+/* ================= DYNAMIC TITLE (reverse geocode) ================= */
+async function reverseGeocode(lng, lat){
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${encodeURIComponent(TOKEN)}&types=place,locality,region&limit=1`;
+  const r = await fetch(url);
+  if(!r.ok) return null;
+  const j = await r.json();
+  return (j.features && j.features[0] && j.features[0].text) ? j.features[0].text : null;
+}
+async function updateTitleFromCoords(lng, lat){
+  try{
+    const city = await reverseGeocode(lng, lat);
+    currentCity = city || currentCity || 'this place';
+    document.getElementById('brandCity').textContent = currentCity;
+  }catch(e){}
+}
+// initialize title once
+updateTitleFromCoords(marker.getLngLat().lng, marker.getLngLat().lat);
+
+/* ================= BACKGROUND PICKER + auto-contrast (title + labels) ================= */
+const bgPicker = document.getElementById('bgColor');
+bgPicker.addEventListener('input', (e)=>{
+  const hex = e.target.value;
+  document.documentElement.style.setProperty('--page', hex);
+  const c = hexToRgb(hex);
+  const lum = relativeLuminance(c.r, c.g, c.b);
+  document.documentElement.style.setProperty('--label', lum < 0.5 ? '#FFFFFFCC' : '#1B1917CC');
+  document.documentElement.style.setProperty('--title', lum < 0.5 ? '#FFFFFF' : '#1B1917');
+  document.documentElement.style.setProperty('--accent', lum < 0.5 ? '#F0D3B2' : '#8A6A4F');
+});
+function hexToRgb(hex){ const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); return m?{r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}:{r:242,g:239,b:233}; }
+function relativeLuminance(r,g,b){
+  const sr=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});
+  return 0.2126*sr[0]+0.7152*sr[1]+0.0722*sr[2];
+}
+
+/* ================= TOAST ================= */
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.opacity='0.95';
+  setTimeout(()=> t.style.opacity='0', 2000);
+}
+
+/* ================= Utilities ================= */
+function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+  const words=(text||'').split(/\s+/); let line=''; let yy=y;
+  for(let i=0;i<words.length;i++){
+    const test=line + words[i] + ' ';
+    if(ctx.measureText(test).width > maxWidth && i>0){
+      ctx.fillText(line.trim(), x, yy); yy += lineHeight; line = words[i] + ' ';
+    }else line = test;
+  }
+  ctx.fillText(line.trim(), x, yy);
+}
+function loadImage(url){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = ()=> resolve(img);
+    img.onerror = ()=> reject(new Error('Static map failed to load.'));
+    img.src = url;
+  });
+}
+async function ensureFonts(){
+  if(document.fonts && document.fonts.load){
+    try{
+      await document.fonts.load('42px Magonda');
+      await document.fonts.load('14px PPNeueMachina');
+      await document.fonts.ready;
+    }catch(e){}
+  }
+}
+
+/* ===== Rounded-rect path (shared) ===== */
+function roundRectPath(ctx, x,y,w,h,r){
+  const rr = Math.max(0, Math.min(r, Math.min(w,h)/2));
+  ctx.beginPath();
+  ctx.moveTo(x+rr, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, rr);
+  ctx.arcTo(x+w, y+h, x,   y+h, rr);
+  ctx.arcTo(x,   y+h, x,   y,   rr);
+  ctx.arcTo(x,   y,   x+w, y,   rr);
+  ctx.closePath();
+}
+
+/* ===== Paper grain clipped to card (subtle) ===== */
+function paperTextureClipped(ctx, x,y,w,h, radius, amount=0.14){
+  ctx.save();
+  roundRectPath(ctx, x,y,w,h, radius);
+  ctx.clip();
+
+  // vignette
+  const g = ctx.createRadialGradient(x+w/2, y+h/2, Math.min(w,h)*0.2, x+w/2, y+h/2, Math.max(w,h)*0.75);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.10)');
+  ctx.globalCompositeOperation='multiply'; ctx.fillStyle=g; ctx.fillRect(x,y,w,h);
+
+  // speckle
+  const n=document.createElement('canvas'); const nw=256, nh=256; n.width=nw; n.height=nh;
+  const nc=n.getContext('2d'); const im=nc.createImageData(nw,nh);
+  for(let i=0;i<im.data.length;i+=4){const v=(Math.random()*255)|0; im.data[i]=im.data[i+1]=im.data[i+2]=v; im.data[i+3]=255;}
+  nc.putImageData(im,0,0);
+  ctx.globalAlpha=Math.min(1,Math.max(0,amount));
+  ctx.fillStyle=ctx.createPattern(n,'repeat'); ctx.fillRect(x,y,w,h);
+
+  // inner edge
+  ctx.globalAlpha=1; ctx.fillStyle='rgba(0,0,0,.07)';
+  ctx.beginPath(); const inset=8; ctx.rect(x+inset,y+inset,w-inset*2,h-inset*2); ctx.rect(x,y,w,h); ctx.fill('evenodd');
+
+  ctx.restore();
+}
+
+/* Vintage tone overlay for static map */
+function vintageTone(ctx,x,y,w,h){
+  ctx.save();
+  ctx.fillStyle='rgba(196,160,120,.22)'; ctx.fillRect(x,y,w,h);
+  const g=ctx.createRadialGradient(x+w/2,y+h/2,Math.min(w,h)*0.2,x+w/2,y+h/2,Math.max(w,h)*0.8);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.16)');
+  ctx.fillStyle=g; ctx.fillRect(x,y,w,h);
+  ctx.restore();
+}
+
+/* ================= COMPOSER (EXPORT) ================= */
+async function compose({width,height}){
+  await ensureFonts();
+
+  const canvas=document.createElement('canvas');
+  canvas.width=width; canvas.height=height;
+  const ctx=canvas.getContext('2d');
+
+  // theme vars
+  const styles = getComputedStyle(document.documentElement);
+  const pageBg = styles.getPropertyValue('--page').trim() || '#F2EFE9';
+  const accent = styles.getPropertyValue('--accent').trim() || '#8A6A4F';
+  const hand   = styles.getPropertyValue('--hand').trim()   || '#3C2F25';
+  ctx.fillStyle = pageBg; ctx.fillRect(0,0,width,height);
+
+  const margin = Math.round(width*0.05);
+  const gap = Math.round(width*0.04);
+  const cardW = width - margin*2;
+  const cardH = Math.round((height - margin*2 - gap)/2);
+  const r = 20; // perfect shared radius
+
+  const shadow=(x,y,w,h)=>{ctx.save();ctx.shadowColor='rgba(0,0,0,.15)';ctx.shadowBlur=24;ctx.shadowOffsetY=12;
+    roundRectPath(ctx, x+2, y+4, w, h, r); ctx.fillStyle=pageBg;ctx.fill();ctx.restore();}
+
+  /* FRONT */
+  const FX=margin, FY=margin;
+  shadow(FX,FY,cardW,cardH);
+  roundRectPath(ctx, FX,FY,cardW,cardH,r); ctx.fillStyle='#EEE7DC'; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#D7CDBF'; ctx.stroke();
+  const grainAmt = (document.getElementById('grain') ? document.getElementById('grain').value : 16)/300; // softer
+  paperTextureClipped(ctx, FX,FY,cardW,cardH,r, grainAmt);
+
+  ctx.save(); ctx.fillStyle='#1B1917'; ctx.textAlign='center';
+  ctx.font=Math.round(cardW*0.024)+"px PPNeueMachina"; ctx.fillText('CARTOLINA POSTALE', FX+cardW/2, FY+cardH*0.09);
+  ctx.globalAlpha=.85; ctx.font=Math.round(cardW*0.017)+"px PPNeueMachina"; ctx.fillText('I thought of this place and thought of you.', FX+cardW/2, FY+cardH*0.14); ctx.globalAlpha=1; ctx.restore();
+
+  ctx.strokeStyle='rgba(0,0,0,.12)'; ctx.beginPath();
+  ctx.moveTo(FX+Math.round(cardW*0.06), FY+cardH*0.17);
+  ctx.lineTo(FX+cardW-Math.round(cardW*0.06), FY+cardH*0.17); ctx.stroke();
+
+  const note=document.getElementById('note').value.trim();
+  ctx.font=Math.round(cardW*0.070)+"px Magonda"; /* same larger size from last step */
+  ctx.textAlign='left'; ctx.fillStyle=hand;
+  const nx=FX+Math.round(cardW*0.08), ny=FY+Math.round(cardH*0.27), nw=cardW-Math.round(cardW*0.16);
+  wrapText(ctx,note,nx,ny,nw,Math.round(cardH*0.135));  // tuned line height
+
+  ctx.beginPath(); ctx.moveTo(FX+Math.round(cardW*0.06), FY+cardH*0.8); ctx.lineTo(FX+cardW-Math.round(cardW*0.06), FY+cardH*0.8); ctx.stroke();
+
+  ctx.save(); ctx.textAlign='center'; ctx.globalAlpha=.9; ctx.font=Math.round(cardW*0.017)+"px PPNeueMachina";
+  ctx.fillText('Thanks for sharing that moment with me.', FX+cardW/2, FY+cardH*0.9); ctx.restore();
+
+  /* EXPORT-ONLY STAMP — Front, top-right (kept) */
+  (function drawStampOnFront(){
+    const stampW = 120, stampH = 42;
+    const insetX = Math.round(cardW*0.06);
+    const insetY = Math.round(cardH*0.06);
+    const sx = FX + cardW - insetX - stampW;
+    const sy = FY + insetY;
+    ctx.save();
+    ctx.translate(sx + stampW/2, sy + stampH/2);
+    ctx.rotate(-6*Math.PI/180);
+    ctx.translate(-stampW/2, -stampH/2);
+    ctx.setLineDash([4,3]);
+    ctx.strokeStyle='rgba(0,0,0,.45)'; ctx.lineWidth=1;
+    ctx.strokeRect(0,0,stampW,stampH);
+    ctx.setLineDash([]);
+    ctx.font=Math.round(cardW*0.015)+"px PPNeueMachina"; ctx.textAlign='center'; ctx.fillStyle='#1B1917';
+    ctx.fillText('INTERNET MAIL • PRIORITY', stampW/2, Math.round(stampH/2)+5);
+    ctx.restore();
+  })();
+
+  /* BACK — A NOTE FROM + City + large map */
+  const BX=margin, BY=margin + cardH + gap;
+  shadow(BX,BY, cardW, cardH);
+  roundRectPath(ctx, BX,BY,cardW,cardH,r); ctx.fillStyle='#EEE7DC'; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#D7CDBF'; ctx.stroke();
+  paperTextureClipped(ctx, BX,BY,cardW,cardH,r, grainAmt);
+
+  // Guarantee a real city name at export
+  const {lng,lat} = marker.getLngLat();
+  const ensuredCity = await (async ()=> (await reverseGeocode(lng,lat)) || currentCity || '')();
+
+  ctx.save(); ctx.textAlign='center';
+  ctx.fillStyle='#1B1917'; ctx.globalAlpha=.85; ctx.font=Math.round(cardW*0.017)+"px PPNeueMachina";
+  ctx.fillText('A NOTE FROM', BX+cardW/2, BY+cardH*0.12);
+  if(ensuredCity){
+    ctx.globalAlpha=1; ctx.fillStyle = accent; ctx.font=Math.round(cardW*0.035)+"px PPNeueMachina";
+    ctx.fillText(ensuredCity, BX+cardW/2, BY+cardH*0.18);
+  }
+  ctx.restore();
+
+  // Optional user label (Magonda, darker-for-clarity)
+  const placeLabel=(document.getElementById('placeLabel').value||'').trim();
+  if(placeLabel){
+    ctx.save(); ctx.textAlign='center'; ctx.fillStyle = hand; /* same darker-lighter tone */
+    ctx.font=Math.round(cardW*0.082)+"px Magonda";
+    ctx.fillText(placeLabel, BX+cardW/2, BY+cardH*0.27);
+    ctx.restore();
+  }
+
+  // Map “photo” ~ fills most of the card
+  const padX = Math.round(cardW*0.03);
+  const topOffset = placeLabel ? cardH*0.32 : (ensuredCity ? cardH*0.22 : cardH*0.18);
+  const photoX = BX + padX;
+  const photoY = BY + Math.round(topOffset);
+  const photoW = cardW - padX*2;
+  const photoH = Math.round(cardH - topOffset - cardH*0.06);
+
+  // Static map (≤1280×1280)
+  const zoom = map.getZoom().toFixed(2);
+  const styleId = document.getElementById('styleSel').value;
+  const reqW = Math.min(1280, Math.max(1, Math.round(photoW)));
+  const reqH = Math.min(1280, Math.max(1, Math.round(photoH)));
+  const staticUrl = `https://api.mapbox.com/styles/v1/${styleId}/static/`+
+    `pin-s+7A5C49(${lng},${lat})/${lng},${lat},${zoom},0/${reqW}x${reqH}@2x?access_token=${encodeURIComponent(TOKEN)}`;
+
+  const staticImg = await loadImage(staticUrl);
+
+  ctx.save();
+  const matte=8;
+  roundRectPath(ctx, photoX-matte, photoY-matte, photoW+matte*2, photoH+matte*2, 10);
+  ctx.fillStyle='rgba(255,255,255,.7)'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,.06)'; ctx.stroke();
+
+  roundRectPath(ctx, photoX, photoY, photoW, photoH, 10); ctx.clip();
+  ctx.drawImage(staticImg, 0,0, staticImg.width, staticImg.height, photoX, photoY, photoW, photoH);
+  vintageTone(ctx, photoX, photoY, photoW, photoH);
+  ctx.restore();
+
+  // footer
+  ctx.save(); ctx.globalAlpha=.55; ctx.textAlign='center'; ctx.font=Math.round(cardW*0.015)+"px PPNeueMachina";
+  ctx.fillText('withwayfarer.com • Map data © OpenStreetMap • Tiles © Mapbox', BX+cardW/2, BY + cardH - Math.round(cardH*0.03));
+  ctx.restore();
+
+  return canvas;
+}
+
+/* ================= DOWNLOAD ================= */
+function saveCanvas(canvas, mime='image/png', filename='postcard'){
+  return new Promise((resolve,reject)=>{
+    if(canvas.toBlob){
+      canvas.toBlob(blob=>{
+        if(!blob){reject(new Error('toBlob failed'));return;}
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url; a.download=`${filename}.${mime==='image/png'?'png':'jpg'}`;
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); resolve();
+      }, mime, mime==='image/jpeg'?0.94:undefined);
+    }else{
+      try{
+        const dataURL=canvas.toDataURL(mime, mime==='image/jpeg'?0.94:undefined);
+        const a=document.createElement('a'); a.href=dataURL; a.download=`${filename}.${mime==='image/png'?'png':'jpg'}`; document.body.appendChild(a); a.click(); a.remove(); resolve();
+      }catch(e){reject(e);}
+    }
+  });
+}
+
+async function handleDownload(kind){
+  try{
+    if(!TOKEN || !TOKEN.startsWith('pk.')){ toast('Add a valid public Mapbox token.'); return; }
+    const {lng,lat} = marker.getLngLat();
+    const c = await reverseGeocode(lng,lat);
+    if(c){ currentCity = c; document.getElementById('brandCity').textContent = currentCity; }
+
+    const [w,h] = document.getElementById('sizeSel').value.split('x').map(Number);
+    toast('Generating postcard…');
+    const canvas = await compose({width:w, height:h});
+    await saveCanvas(canvas, kind==='png'?'image/png':'image/jpeg', `postcard_${new Date().toISOString().slice(0,10)}`);
+    toast('Downloaded ✓');
+  }catch(err){
+    console.error(err);
+    toast('Export failed. Check token or try smaller size.');
+  }
+}
+
+/* ================= EVENTS ================= */
+document.getElementById('dlPng').addEventListener('click', ()=> handleDownload('png'));
+document.getElementById('dlJpg').addEventListener('click', ()=> handleDownload('jpg'));
+</script>
+</body>
+</html>
